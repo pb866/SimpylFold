@@ -1,7 +1,7 @@
 let s:blank_re = '^\s*$'
 let s:comment_re = '^\s*#'
-let s:multi_def_end_re = '):\s*$'
-let s:multi_def_end_solo_re = '^\s*):\s*$'
+let s:multi_def_end_re = ')\%(\s*->\s*\S\+[^#]*\)\?:\s*\%(#.*\)\?$'
+let s:multi_def_end_solo_re = '^\s*)\%(\s*->\s*\S\+[^#]*\)\?:\s*\%(#.*\)\?$'
 let s:docstring_re = '^\s*[bBfFrRuU]\{0,2}\\\@<!\(''''''\|"""\|[''"]\)'
 let s:string_start_re = '[bBfFrRuU]\{0,2}\\\@<!\%(''''''\|"""\|[''"]\)'
 let s:string_prefix_re = '[bBfFrRuU]\{0,2}'
@@ -31,9 +31,19 @@ function! SimpylFold#BufferInit() abort
     endif
 endfunction
 
+" Get spaces per indent setting
+function! s:indent_spaces() abort
+    if &softtabstop > 0
+        return &softtabstop
+    elseif &softtabstop < 0 && &shiftwidth > 0
+        return &shiftwidth
+    endif
+    return &tabstop
+endfunction
+
 " Calculate indent
-function! s:indent(line) abort
-    let ind = matchend(a:line, '^ *') / &softtabstop
+function! s:indent(line, ind_spaces) abort
+    let ind = matchend(a:line, '^ *') / a:ind_spaces
     if ind == 0
         let ind = matchend(a:line, '^\t*')
     endif
@@ -161,6 +171,8 @@ function! s:cache() abort
     let lnum_last = len(lines)
     call insert(lines, '')  " Padding for lnum offset
 
+    let ind_spaces = s:indent_spaces()
+
     let defs_stack = []
     let ind_def = -1
     let in_string = 0
@@ -201,11 +213,16 @@ function! s:cache() abort
 
         " Blank lines
         if line =~# s:blank_re
-            call add(cache, {'is_blank': 1, 'is_comment': 0, 'foldexpr': len(defs_stack)})
+            if lnum == lnum_last
+                call add(cache, {'is_blank': 1, 'is_comment': 0, 'foldexpr': 0})
+                call s:blanks_adj(cache, lnum, 0)
+            else
+                call add(cache, {'is_blank': 1, 'is_comment': 0, 'foldexpr': len(defs_stack)})
+            endif
             continue
         endif
 
-        let ind = s:indent(line)
+        let ind = s:indent(line, ind_spaces)
 
         " Comments
         if line =~# s:comment_re
